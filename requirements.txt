@@ -1,0 +1,9 @@
+llama-index-core
+llama-index-readers-file
+llama-index-embeddings-huggingface
+llama-index-readers-wikipedia
+wikipedia
+docx2txt
+openpyxl
+olefile
+pytesseract
