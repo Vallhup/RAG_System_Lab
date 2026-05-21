@@ -1,83 +1,109 @@
-# RAG Practice Lab
+# SciFact Retrieval API
 
-## 실행 방법
+LlamaIndex 기반으로 SciFact `corpus.jsonl` 문서를 검색해 평가 서버가 요구하는 `doc_id` ranked list를 반환하는 FastAPI 서버입니다. 답변 생성은 하지 않고, `POST /retrieve`에서 검색 context만 반환합니다.
 
-```cmd
-docker build -t llama-dev .
-docker run --rm -v "%cd%\logs:/logs" llama-dev
+## 실행 방식
+
+Docker 기준 실행:
+
+```bash
+docker compose -p ragapi up --build
 ```
 
-- 디버그 로그 파일은 `/logs/debug.log` 에 생성됩니다.
-- 기본 응답기는 `CustomLLM` 기반의 `ExtractiveLLM` 입니다.
-- 필요하면 `docker run ... -e LLM_PROVIDER=mock llama-dev` 형태로 `MockLLM`로 바꿔 실행할 수 있습니다.
-- 이후 실제 로컬 LLM을 붙일 경우 `build_llm()` 함수에 provider 분기만 추가하면 됩니다.
+로컬 실행:
 
-# 포맷별 호환성 보고서
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
-## 1. 파싱 품질 테스트
+Cloudflare Quick Tunnel:
 
-| 파일 | 확장자 | 로드 성공 | 파싱 품질 (상/중/하) | 판단 근거 |
-|------|--------|:--------:|:------------------:|----------|
-| Text.txt | `.txt` | O | 상 | 본문 텍스트가 자연스럽게 추출되었고 핵심 내용 누락이 거의 없음 |
-| Policy.pdf | `.pdf` | O | 상 | 페이지별 텍스트가 안정적으로 추출되었고 한글도 정상적으로 유지됨 |
-| SRS.docx | `.docx` | O | 중 | 로드는 성공했으나 템플릿 문구와 실제 내용이 혼재되어 구조적 정리가 추가로 필요함 |
-| CRA.xlsx | `.xlsx` | O | 중 | `StructuredExcelReader`로 주요 행 구조는 복원했지만 표 전체 구조를 완전하게 유지하지는 못함 |
-| DESIGN.hwp | `.hwp` | O | 중 | `CleanHWPReader` 적용 후 공고 번호, 제목, 목차 등 주요 본문은 읽히지만 특수기호와 구조 정보 일부는 손실됨 |
-| Image.png | `.png` | O | 중 | OCR로 본문 텍스트는 추출되지만 줄바꿈, 중복 문장, 오탈자가 일부 남아 있음 |
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+```
 
-- 파싱 품질 기준: 원본 대비 텍스트 추출 정확도
-- 판단 근거: Docker 실행 로그에서 출력한 문서 본문과 원본 파일 비교 기준
+`rag_endpoint.json`의 `api_base_url`에는 Cloudflare base URL만 넣고 `/health`, `/retrieve`는 붙이지 않습니다.
 
-## 2. 검색 품질 테스트
+## 데이터
 
-현재 구성은 외부 API를 호출하지 않는 로컬 `CustomLLM` 기반 추출형 응답기를 사용합니다. 따라서 실제 생성형 LLM처럼 문장을 재구성하기보다는, 검색된 문맥에서 관련 구절을 추출해 연결하는 방식에 가깝습니다. 아래 표는 `main.py`의 파일별 질의 루프를 실제 실행한 결과를 기준으로 작성했습니다.
+평가 대상 corpus는 다음 경로에 있어야 합니다.
 
-| 파일 | 질문 | 기대 답변 (원본 기준) | 실제 응답 | 검색 품질 (상/중/하) | 판단 근거 |
-|------|------|-------------------|----------|:------------------:|----------|
-| Text.txt | 한계기업의 정의는 무엇인가? | 최근 3개 회계연도 말 이자보상비율이 연속으로 1 미만인 기업 | 한계기업 정의 문장과 예외 조건이 함께 추출됨 | 상 | 핵심 정의가 정확히 포함됨 |
-| Text.txt | 공동연구개발기관이 제조기업인 경우 최근 3개 회계연도 평균 매출액 기준은 얼마 이상인가? | 3개년 평균 50억 이상 | `3개년 평균 50억 이상` 문장이 직접 추출됨 | 상 | 수치 기준이 정확히 포함됨 |
-| Policy.pdf | 제1조 목적은 무엇인가? | 연구과제 관리 및 연구비 집행에 관한 세부사항을 정하는 것 | 제6조 연구자 책임과 의무 관련 문단이 주로 반환됨 | 하 | 질문 대상 조항이 아닌 다른 조항이 우선 검색됨 |
-| Policy.pdf | 연구자의 책임과 의무 중 연구비와 직접 관련된 항목은 무엇인가? | 연구비의 투명한 집행 및 비목별 집행기준 준수 | 관련 의무 목록과 함께 `연구비의 투명한 집행 및 비목별 집행기준 준수`가 포함됨 | 중 | 핵심 문장은 맞지만 주변 문장이 많이 섞임 |
-| SRS.docx | 이 문서의 목적은 무엇인가? | 소프트웨어 요구사항을 식별하고 명세하는 것 | 목적 문장과 다이어그램 설명 문장이 함께 추출됨 | 중 | 핵심 목적은 맞지만 불필요한 문장이 함께 연결됨 |
-| SRS.docx | 이 문서에서 요구사항 명세를 위해 사용하는 다이어그램은 무엇인가? | Data Flow Diagram 및 Sequence Diagram | 해당 두 다이어그램 이름이 직접 추출됨 | 상 | 기대 답변과 거의 일치함 |
-| CRA.xlsx | DPR-Req.-001: 2의 변경 상태와 수용 여부는 무엇인가? | Change Status는 `Modified`, 수용여부는 `accepted` | `Change Status: Modified`, `수용여부(Status): accepted`가 포함된 행 블록이 추출됨 | 상 | 목표 정보가 같은 행 블록 안에서 정확히 잡힘 |
-| CRA.xlsx | Requirements for mechanical loads 항목의 변경 상태는 무엇인가? | `Added` | `Requirements for mechanical loads` 행과 `Change Status: Added`가 함께 추출됨 | 중 | 목표 정보는 맞지만 다른 행 일부가 함께 붙음 |
-| DESIGN.hwp | 공고 번호와 공고 제목은 무엇인가? | `산업통상부 공고 제2026-150호`, `2026년도 디자인산업기술개발사업 신규지원 대상과제 공고` | 공고 번호와 제목이 맨 앞에 추출됨 | 중 | 핵심 정보는 맞지만 뒤에 본문이 길게 이어짐 |
-| DESIGN.hwp | 1-1. 사업목적의 핵심 내용은 무엇인가? | 디자인융합 혁신 기술개발 지원을 통해 고부가가치를 창출하고 미래성장동력을 확보하는 것 | 연구개발비 지원기준 단락이 우선 추출됨 | 하 | 사업목적이 아닌 후반부 문단이 우선 검색됨 |
-| Image.png | mermaids의 migration pattern은 무엇에 따라 달라지는가? | species, age, environmental conditions | 해당 세 요소가 포함된 첫 문장이 추출됨 | 상 | 핵심 조건이 정확히 포함됨 |
-| Image.png | 겨울철 mermaids는 어디로 이동하는가? | Arctic 인근 summer feeding grounds에서 남쪽으로 이동 | `start migrating southwards from their summer feeding grounds near the Arctic regions`가 포함됨 | 상 | 방향과 출발 지점이 모두 포함됨 |
+```text
+data/scifact/corpus.jsonl
+```
 
-- 검색 품질 기준: 기대 답변 대비 실제 응답의 정확도와 문맥 보존 정도
-- 판단 근거: `main.py`에서 파일별 2개 질의를 실제 실행한 출력 결과 기준
+Docker 이미지에서는 `WORKDIR /app` 기준으로 `/app/data/scifact/corpus.jsonl`을 읽습니다. 경로를 바꾸려면 `RAG_CORPUS_PATH` 환경변수를 설정합니다. LlamaIndex 인덱스는 기본적으로 `/app/storage/scifact`에 생성됩니다.
 
-## 3. 미지원 포맷 해결 방안
+## API
 
-| 확장자 | 실패 원인 | 시도한 해결 방법 | 해결 후 파싱 품질 | 해결 후 검색 품질 |
-|--------|----------|----------------|:------------------:|:------------------:|
-| `.docx` | `docx2txt` 미설치 | `requirements.txt`에 `docx2txt` 추가 후 Docker 재빌드 | 중 | 중 |
-| `.xlsx` | `openpyxl` 미설치 | `requirements.txt`에 `openpyxl` 추가 후 Docker 재빌드, 이후 `StructuredExcelReader`로 표 전처리 적용 | 중 | 중 |
-| `.hwp` | `olefile` 미설치 | `requirements.txt`에 `olefile` 추가 후 Docker 재빌드, 이후 `CleanHWPReader`로 제어문자와 비정상 문자 정제 적용 | 중 | 중 |
-| `.png` | OCR 라이브러리 및 Tesseract 부재 | `pytesseract` 추가, `Dockerfile`에 `tesseract-ocr`, `tesseract-ocr-kor` 설치 | 중 | 중 |
+### `GET /health`
 
-## 4. 검색 품질 개선 실험
+SciFact corpus를 읽고 chunk index를 만들 수 있으면 다음 형태로 응답합니다.
 
-### 실제 수행한 실험
+```json
+{
+  "status": "ok",
+  "ready": true
+}
+```
 
-| 개선 방법 | 적용 대상 | 테스트 질문 | 개선 전 응답 | 개선 후 응답 | 효과 (상/중/하) |
-|----------|----------|-----------|------------|------------|:--------------:|
-| 표 문서 전처리 후 인덱싱 | `CRA.xlsx` | `DPR-Req.-001: 2의 변경 상태와 수용 여부는 무엇인가?` | `... Unnamed: 6: Modified ... Unnamed: 14: accepted ...` 형태의 긴 평탄 텍스트 | `고객요구사항ID ... DPR-Req.-001: 2 ... Change Status: Modified ... 수용여부(Status): accepted ...` | 상 |
-| HWP 추출 결과 정제 | `DESIGN.hwp` | `공고 번호와 공고 제목은 무엇인가?` | 깨진 문자와 제어문자가 포함된 응답 | `산업통상부 공고 제2026-150호 2026년도 디자인산업기술개발사업 신규지원 대상과제 공고 ...` | 중 |
+### `POST /retrieve`
 
-- 실험 요약: `CRA.xlsx`는 행과 열의 관계가 깨진 상태에서는 필요한 속성 값을 찾기 어려웠다. `StructuredExcelReader`를 적용하자 하나의 요구사항이 하나의 블록으로 정리되어 `Modified`, `accepted` 같은 값이 더 직접적으로 검색되었다.
-- 실험 요약: `DESIGN.hwp`는 원본 추출 결과에 제어문자와 비정상 문자가 섞여 있었다. `CleanHWPReader`를 적용하자 공고 번호와 제목 같은 핵심 정보가 문서 첫 부분에서 더 깨끗하게 추출되었다.
+요청:
 
-### 추가 개선 아이디어
+```json
+{
+  "query_id": "selfcheck_001",
+  "question": "scientific claim text for testing",
+  "top_k": 10
+}
+```
 
-아래 항목들은 아직 실제 비교 실험까지 수행하지 않았고, 후속 개선 방향으로만 정리했습니다.
+응답:
 
-| 아이디어 | 적용 대상 | 기대 효과 |
-|----------|----------|----------|
-| 실제 로컬 LLM 또는 외부 LLM provider 추가 | 전체 문서 | 질문 이해를 반영한 자연어 응답 가능 |
-| OCR 후처리 적용 | `Image.png` | 줄바꿈과 노이즈가 정리된 텍스트 확보 |
+```json
+{
+  "query_id": "selfcheck_001",
+  "contexts": [
+    {
+      "doc_id": "31715818",
+      "chunk_id": "31715818::chunk_000",
+      "score": 12.345678,
+      "text": "retrieved chunk text"
+    }
+  ]
+}
+```
 
-- 예시 접근법: chunk_size/overlap 조정, metadata 강화, 표와 이미지 전처리, 실제 LLM 연결
+# SciFact Retrieval Report
+
+## 실행 방식
+- 제출 코드 위치: `app/main.py`, `app/scifact.py`, `app/core.py`
+- RAG 서버 실행 방식: Docker Compose
+- 서버 실행 명령: `docker compose -p ragapi up --build`
+- Cloudflare Quick Tunnel URL: `rag_endpoint.json`의 `api_base_url` 값
+- 사용한 retriever/index: LlamaIndex `VectorStoreIndex` + BM25 hybrid retriever, LlamaIndex 실패 시 BM25 fallback
+
+## 데이터 처리
+- corpus ingest 방식: `data/scifact/corpus.jsonl`을 JSON Lines로 읽고 각 줄의 `_id`, `title`, `text`를 파싱
+- title/text 사용 방식: LlamaIndex `Document` text에 `title`과 `text`를 함께 포함
+- chunk size / overlap: LlamaIndex 기본 512 / 80, BM25 fallback 기본 220 words / 50 words overlap
+- doc_id 보존 방식: 각 LlamaIndex `Document`와 chunk node metadata에 corpus `_id`를 `doc_id`로 그대로 저장
+
+## 인덱스와 검색
+- embedding 모델: `BAAI/bge-small-en-v1.5`
+- vector store/index: LlamaIndex `VectorStoreIndex`, `storage/scifact`에 persist
+- score 계산 방식: LlamaIndex와 BM25 후보를 Reciprocal Rank Fusion으로 결합, fallback 시 BM25 점수 + title token overlap boost
+- top_k 설정: 요청값 사용, 최대 10
+
+## 성능 개선 방법
+- baseline에서 바꾼 점: 기존 파일 기반 RAG와 stale `storage/` 의존을 제거하고 SciFact JSONL 전용 hybrid retriever로 전환
+- 성능을 높이기 위해 시도한 방법: title을 embedding 대상 text에 포함하고, LlamaIndex vector 검색과 BM25 검색을 RRF로 결합
+- 효과가 있었던 방법: 평가가 문서 단위 `doc_id` rank를 보므로 중복 문서 제거 후 top_k를 구성
+
+## Self-check
+- /health 결과: `data/scifact/corpus.jsonl` 존재 시 `{"status":"ok","ready":true}`
+- 자체 테스트 질문: `scientific claim text for testing`
+- 자체 테스트 검색 결과 top doc_id: `POST /retrieve`로 확인
+- 자체 테스트 검색 결과 top score: `POST /retrieve`로 확인
+- 실패한 점 / 개선할 점: 첫 Docker 실행 시 embedding model 다운로드와 LlamaIndex index build 시간이 걸릴 수 있음

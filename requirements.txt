@@ -7,3 +7,7 @@ docx2txt
 openpyxl
 olefile
 pytesseract
+Pillow
+mcp[cli]
+fastapi
+uvicorn[standard]

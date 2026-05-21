@@ -1,0 +1,14 @@
+services:
+  rag:
+    build: .
+    environment:
+      RAG_CORPUS_PATH: data/scifact/corpus.jsonl
+      RAG_STORAGE_DIR: storage/scifact
+      RAG_LLAMA_CHUNK_SIZE: "512"
+      RAG_LLAMA_CHUNK_OVERLAP: "80"
+      RAG_HYBRID_CANDIDATE_MULTIPLIER: "5"
+      RAG_BM25_CHUNK_WORDS: "220"
+      RAG_BM25_CHUNK_OVERLAP: "50"
+    ports:
+      - "8000:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
