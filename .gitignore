@@ -6,3 +6,4 @@ logs/**/*.jsonl
 storage/**
 !storage/
 !storage/README.md
+documents/
