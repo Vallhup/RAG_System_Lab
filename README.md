@@ -34,6 +34,23 @@ data/scifact/corpus.jsonl
 
 Docker 이미지에서는 `WORKDIR /app` 기준으로 `/app/data/scifact/corpus.jsonl`을 읽습니다. 경로를 바꾸려면 `RAG_CORPUS_PATH` 환경변수를 설정합니다. LlamaIndex 인덱스는 기본적으로 `/app/storage/scifact`에 생성됩니다.
 
+이전 실습 데이터는 `data/practice/`에 보관하며 현재 SciFact retrieval endpoint에서는 사용하지 않습니다.
+
+## 로그와 저장소
+
+런타임 로그는 목적별로 분리됩니다.
+
+```text
+logs/app/app.log
+logs/app/error.log
+logs/indexing/index.log
+logs/retrieval/retrieve.jsonl
+```
+
+`logs/retrieval/retrieve.jsonl`에는 `query_id`, retrieval `mode`, latency, top `doc_id`, score가 JSON Lines 형식으로 기록됩니다. Hybrid retrieval 튜닝과 장애 분석에 사용합니다.
+
+현재 인덱스 저장소는 `storage/scifact/`만 사용합니다. 이전 실습에서 생성된 `storage/` 루트의 레거시 인덱스는 삭제했습니다.
+
 ## API
 
 ### `GET /health`

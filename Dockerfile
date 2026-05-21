@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV RAG_CORPUS_PATH=data/scifact/corpus.jsonl
 ENV RAG_STORAGE_DIR=storage/scifact
+ENV RAG_LOG_DIR=logs
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-kor \

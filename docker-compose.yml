@@ -4,6 +4,7 @@ services:
     environment:
       RAG_CORPUS_PATH: data/scifact/corpus.jsonl
       RAG_STORAGE_DIR: storage/scifact
+      RAG_LOG_DIR: logs
       RAG_LLAMA_CHUNK_SIZE: "512"
       RAG_LLAMA_CHUNK_OVERLAP: "80"
       RAG_HYBRID_CANDIDATE_MULTIPLIER: "5"

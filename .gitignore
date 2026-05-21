@@ -1,4 +1,8 @@
 .cache/
 __pycache__/
 *.py[cod]
-documents/
+logs/**/*.log
+logs/**/*.jsonl
+storage/**
+!storage/
+!storage/README.md

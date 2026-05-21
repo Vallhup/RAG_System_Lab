@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -22,6 +23,7 @@ LLAMA_CHUNK_OVERLAP = 80
 BM25_CHUNK_WORDS = 220
 BM25_CHUNK_OVERLAP = 50
 TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9\-]+")
+index_logger = logging.getLogger("rag.index")
 STOPWORDS = {
     "a",
     "about",
@@ -216,12 +218,16 @@ class SciFactLlamaRetriever:
 
     def reload_fallback(self) -> None:
         try:
+            index_logger.info("Loading SciFact corpus from %s", self.corpus_path)
             self.documents = load_corpus(self.corpus_path)
+            index_logger.info("Loaded %s SciFact documents.", len(self.documents))
             self.fallback = BM25FallbackRetriever(self.documents)
+            index_logger.info("BM25 fallback prepared with %s chunks.", len(self.fallback.chunks))
         except Exception as exc:
             self.ready = False
             self.mode = "error"
             self.error = str(exc)
+            index_logger.exception("Failed to prepare BM25 fallback.")
             return
 
         self.ready = bool(self.fallback and self.fallback.ready)
@@ -230,15 +236,18 @@ class SciFactLlamaRetriever:
 
     def build_llama_index(self) -> None:
         try:
+            index_logger.info("Building or loading LlamaIndex index from %s", self.storage_dir)
             self.index = self._build_or_load_index()
             self.ready = True
             self.mode = "llama_index"
             self.error = None
+            index_logger.info("LlamaIndex index is ready.")
         except Exception as exc:
             self.index = None
             self.ready = bool(self.fallback and self.fallback.ready)
             self.mode = "bm25_fallback" if self.ready else "error"
             self.error = f"LlamaIndex unavailable; using BM25 fallback. Cause: {exc}"
+            index_logger.exception("LlamaIndex unavailable; BM25 fallback remains active.")
 
     def retrieve(self, question: str, top_k: int = DEFAULT_TOP_K) -> list[dict[str, Any]]:
         if self.index is not None:
@@ -260,6 +269,7 @@ class SciFactLlamaRetriever:
         if self._can_load_existing_index(metadata_path, expected_metadata):
             from llama_index.core import StorageContext, load_index_from_storage
 
+            index_logger.info("Loading existing LlamaIndex index from %s", self.storage_dir)
             storage_context = StorageContext.from_defaults(persist_dir=str(self.storage_dir))
             return load_index_from_storage(storage_context)
 
@@ -268,6 +278,7 @@ class SciFactLlamaRetriever:
         from llama_index.core.schema import Document
 
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        index_logger.info("Creating LlamaIndex documents for %s SciFact records.", len(self.documents))
         llama_documents = [
             Document(
                 text=f"{document.title}\n\n{document.text}" if document.title else document.text,
@@ -281,6 +292,7 @@ class SciFactLlamaRetriever:
             chunk_overlap=int(os.getenv("RAG_LLAMA_CHUNK_OVERLAP", str(LLAMA_CHUNK_OVERLAP))),
         )
         nodes = parser.get_nodes_from_documents(llama_documents)
+        index_logger.info("Created %s LlamaIndex nodes.", len(nodes))
         chunk_counts: Counter[str] = Counter()
         for node in nodes:
             doc_id = str(node.metadata.get("doc_id", ""))
@@ -294,6 +306,7 @@ class SciFactLlamaRetriever:
             json.dumps(expected_metadata, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        index_logger.info("Persisted LlamaIndex index to %s", self.storage_dir)
         return index
 
     def _retrieve_with_llama(self, question: str, similarity_top_k: int) -> list[dict[str, Any]]:
