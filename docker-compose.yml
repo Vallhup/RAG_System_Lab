@@ -12,4 +12,7 @@ services:
       RAG_BM25_CHUNK_OVERLAP: "50"
     ports:
       - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./storage/scifact:/app/storage/scifact
     command: uvicorn main:app --host 0.0.0.0 --port 8000

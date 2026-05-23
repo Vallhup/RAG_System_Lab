@@ -335,8 +335,8 @@ class SciFactLlamaRetriever:
         bm25_contexts = self.fallback.retrieve(question, candidate_count) if self.fallback else []
         fused = _rrf_fuse(
             ranked_lists=[
-                ("vector", vector_contexts, 1.0),
-                ("bm25", bm25_contexts, 0.8),
+                ("vector", vector_contexts, _env_float("RAG_VECTOR_WEIGHT", 1.0)),
+                ("bm25", bm25_contexts, _env_float("RAG_BM25_WEIGHT", 0.8)),
             ],
             top_k=top_k,
         )
@@ -358,6 +358,10 @@ class SciFactLlamaRetriever:
             "document_count": len(self.documents),
             "chunk_size": int(os.getenv("RAG_LLAMA_CHUNK_SIZE", str(LLAMA_CHUNK_SIZE))),
             "chunk_overlap": int(os.getenv("RAG_LLAMA_CHUNK_OVERLAP", str(LLAMA_CHUNK_OVERLAP))),
+            "candidate_multiplier": int(os.getenv("RAG_HYBRID_CANDIDATE_MULTIPLIER", str(HYBRID_CANDIDATE_MULTIPLIER))),
+            "bm25_weight": _env_float("RAG_BM25_WEIGHT", 0.8),
+            "vector_weight": _env_float("RAG_VECTOR_WEIGHT", 1.0),
+            "rrf_k": int(os.getenv("RAG_RRF_K", str(RRF_K))),
             "embedding_model": os.getenv("RAG_EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
         }
 
@@ -491,7 +495,7 @@ def _rrf_fuse(
                 continue
             seen_in_list.add(doc_id)
 
-            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + weight / (RRF_K + rank)
+            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + weight / (_rrf_k() + rank)
 
             source_score = _representative_score(source, context)
             if doc_id not in representatives or source_score > representative_scores[doc_id]:
@@ -522,12 +526,26 @@ def _candidate_count(top_k: int) -> int:
     return max(min(requested, 100), min(top_k, MAX_TOP_K))
 
 
+def _rrf_k() -> int:
+    return int(os.getenv("RAG_RRF_K", str(RRF_K)))
+
+
 def _tokens(text: str) -> list[str]:
     return [
         token
         for token in TOKEN_PATTERN.findall(text.lower())
         if token not in STOPWORDS and len(token) > 1
     ]
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
 
 
 def _chunk_text(title: str, text: str, chunk_words: int, overlap: int) -> list[str]:

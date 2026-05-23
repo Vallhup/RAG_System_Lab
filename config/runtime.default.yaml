@@ -1,0 +1,18 @@
+retrieval:
+  top_k: 10
+  candidate_multiplier: 5
+  bm25_weight: 0.8
+  vector_weight: 1.0
+  rrf_k: 60
+  llama_chunk_size: 512
+  llama_chunk_overlap: 80
+  bm25_chunk_words: 220
+  bm25_chunk_overlap: 50
+
+embedding:
+  model: BAAI/bge-small-en-v1.5
+
+logging:
+  raw_query: true
+  raw_context: false
+  score_breakdown: true

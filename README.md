@@ -45,9 +45,21 @@ logs/app/app.log
 logs/app/error.log
 logs/indexing/index.log
 logs/retrieval/retrieve.jsonl
+logs/security/audit.jsonl
+logs/errors/failures.jsonl
+logs/evaluation/runs.jsonl
 ```
 
-`logs/retrieval/retrieve.jsonl`에는 `query_id`, retrieval `mode`, latency, top `doc_id`, score가 JSON Lines 형식으로 기록됩니다. Hybrid retrieval 튜닝과 장애 분석에 사용합니다.
+`logs/retrieval/retrieve.jsonl`에는 `query_id`, `trace_id`, `config.hash`, `policy.hash`, retrieval `mode`, latency, top `doc_id`, score가 JSON Lines 형식으로 기록됩니다. Hybrid retrieval 튜닝과 장애 분석에 사용합니다.
+
+`logs/security/audit.jsonl`에는 런타임 설정/보안 정책 snapshot과 policy decision이 기록됩니다. `logs/errors/failures.jsonl`에는 retriever 초기화 지연, 예외, empty result 같은 실패 이벤트가 분리되어 저장됩니다. raw retrieved context는 기본적으로 로그에 저장하지 않습니다.
+
+기본 설정 예시는 다음 파일에 있습니다.
+
+```text
+config/runtime.default.yaml
+config/security.default.yaml
+```
 
 현재 인덱스 저장소는 `storage/scifact/`만 사용합니다. 이전 실습에서 생성된 `storage/` 루트의 레거시 인덱스는 삭제했습니다.
 

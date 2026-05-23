@@ -18,8 +18,11 @@ def configure_logging() -> None:
 
     app_dir = LOG_DIR / "app"
     retrieval_dir = LOG_DIR / "retrieval"
+    evaluation_dir = LOG_DIR / "evaluation"
+    security_dir = LOG_DIR / "security"
+    error_event_dir = LOG_DIR / "errors"
     index_dir = LOG_DIR / "indexing"
-    for directory in (app_dir, retrieval_dir, index_dir):
+    for directory in (app_dir, retrieval_dir, evaluation_dir, security_dir, error_event_dir, index_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter(
@@ -49,10 +52,26 @@ def configure_logging() -> None:
 
 
 def log_retrieval_event(event: dict[str, Any]) -> None:
-    retrieval_dir = LOG_DIR / "retrieval"
-    retrieval_dir.mkdir(parents=True, exist_ok=True)
-    payload = {"ts": _now(), **event}
-    with (retrieval_dir / "retrieve.jsonl").open("a", encoding="utf-8") as handle:
+    log_event("retrieval", "retrieve.jsonl", event)
+
+
+def log_security_event(event: dict[str, Any]) -> None:
+    log_event("security", "audit.jsonl", event)
+
+
+def log_failure_event(event: dict[str, Any]) -> None:
+    log_event("errors", "failures.jsonl", event)
+
+
+def log_evaluation_event(event: dict[str, Any]) -> None:
+    log_event("evaluation", "runs.jsonl", event)
+
+
+def log_event(category: str, filename: str, event: dict[str, Any]) -> None:
+    event_dir = LOG_DIR / category
+    event_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"timestamp": _now(), **event}
+    with (event_dir / filename).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 

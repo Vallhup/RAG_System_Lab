@@ -1,0 +1,20 @@
+privacy:
+  allowed_max: public
+  default_level: public
+  restricted_requires_approval: true
+
+external_api:
+  allow_llm: false
+  allow_embedding: true
+  require_redaction: true
+
+logging:
+  allow_raw_query: true
+  allow_raw_context: false
+  redact_local_paths: true
+  redact_secrets: true
+
+audit:
+  enabled: true
+  log_policy_decisions: true
+  log_blocked_sources: true
