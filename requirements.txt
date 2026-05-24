@@ -11,3 +11,4 @@ Pillow
 mcp[cli]
 fastapi
 uvicorn[standard]
+sentence-transformers

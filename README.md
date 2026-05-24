@@ -63,6 +63,57 @@ config/security.default.yaml
 
 현재 인덱스 저장소는 `storage/scifact/`만 사용합니다. 이전 실습에서 생성된 `storage/` 루트의 레거시 인덱스는 삭제했습니다.
 
+`storage/scifact/metadata.json`은 corpus sha256과 함께 `corpus_id`, `config_hash`, `policy_hash`도 포함합니다. 설정 환경변수 하나만 바꿔도 cache가 자동으로 무효화되므로 회귀 실험 시 stale index가 끼어드는 것을 막습니다.
+
+## 회귀 평가 (regression evaluation)
+
+`app/evaluation.py`는 본 spec §27 Foundation Step 5 + 6 구현입니다. mini gold query 세트(`tests/golden_queries/scifact.sample.jsonl`)를 retriever에 흘려 보내고 한 줄짜리 `EvaluationRun` record를 `logs/evaluation/runs.jsonl`에 추가합니다.
+
+Docker 환경에서 한 번 실행 (Tier 2 hybrid baseline):
+
+```bash
+docker compose -p ragapi --profile eval run --rm eval
+```
+
+5-variant 비교 매트릭스(BM25 단독 / Hybrid baseline / Hybrid + abstract chunker / Tier 3 reranker / Tier 3 reranker + abstract):
+
+```bash
+docker compose -p ragapi --profile eval run --rm eval-matrix
+```
+
+Reranker만 켠 단일 run (점수 비교용):
+
+```bash
+docker compose -p ragapi --profile eval run --rm eval-reranker
+```
+
+LlamaIndex 빌드 없이 BM25 fallback만으로 빠르게 확인:
+
+```bash
+docker compose -p ragapi run --rm rag python -m evaluation --bm25-only --top-k 10
+```
+
+`evaluation.py`의 주요 옵션:
+
+```text
+--tier-max FAST | HYBRID | GRAPH_AUGMENTED | FULL_EVAL
+--work-mode retrieval_only | recall | research | ...
+--variant-label <label>      # run record에 라벨 부착
+--matrix                     # 5 variant 자동 비교
+--bm25-only / --require-hybrid
+```
+
+산출되는 record는 다음을 포함합니다.
+
+- `run_id`, `dataset_name`, `corpus_id`, `corpus_hash`, `config_hash`, `policy_hash`, `retriever_mode`
+- `metrics`: `hit@1/3/5/10`, `ndcg@10`, `mrr`, `average_latency_ms`, `empty_result_count`
+- `per_query`: 각 query의 `top_doc_ids`, `score_stats`, `latency_ms`, (라벨이 있으면) per-query metric
+- `diff_vs_previous`: 같은 corpus + dataset의 직전 run과의 RBO / top-10 Jaccard 비교
+
+라벨이 없는 query(개인 Vault 같은 경우)는 자동으로 label-free 모드가 되어 `top_doc_ids` snapshot과 분포 통계만 기록합니다. golden 파일 schema는 `tests/golden_queries/README.md`를 참고하세요.
+
+평가 서버가 보내는 비공개 query를 모방하지 않으며, 본 회귀 세트는 본인이 corpus를 보고 직접 만든 query 만을 사용합니다(실습 7 명세의 "정답 하드코딩 금지" 조항 준수).
+
 ## API
 
 ### `GET /health`

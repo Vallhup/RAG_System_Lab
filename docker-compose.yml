@@ -1,18 +1,48 @@
+x-rag-common: &rag-common
+  build: .
+  environment:
+    RAG_CORPUS_PATH: data/scifact/corpus.jsonl
+    RAG_STORAGE_DIR: storage/scifact
+    RAG_LOG_DIR: logs
+    RAG_LLAMA_CHUNK_SIZE: "512"
+    RAG_LLAMA_CHUNK_OVERLAP: "80"
+    RAG_HYBRID_CANDIDATE_MULTIPLIER: "5"
+    RAG_BM25_CHUNK_WORDS: "220"
+    RAG_BM25_CHUNK_OVERLAP: "50"
+    RAG_CORPUS_ID: "scifact"
+    RAG_CHUNKER: "sentence_window"
+    RAG_ENABLE_RERANKER: "false"
+    RAG_RERANKER_MODEL: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  volumes:
+    - ./logs:/app/logs
+    - ./storage/scifact:/app/storage/scifact
+    - ./tests:/app/tests
+
 services:
   rag:
-    build: .
+    <<: *rag-common
+    ports:
+      - "8000:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  eval:
+    <<: *rag-common
+    profiles: ["eval"]
+    command: python -m evaluation --golden tests/golden_queries/scifact.sample.jsonl --top-k 10
+
+  eval-matrix:
+    <<: *rag-common
+    profiles: ["eval"]
+    command: python -m evaluation --golden tests/golden_queries/scifact.sample.jsonl --top-k 10 --matrix
+
+  eval-reranker:
+    <<: *rag-common
+    profiles: ["eval"]
     environment:
       RAG_CORPUS_PATH: data/scifact/corpus.jsonl
       RAG_STORAGE_DIR: storage/scifact
       RAG_LOG_DIR: logs
-      RAG_LLAMA_CHUNK_SIZE: "512"
-      RAG_LLAMA_CHUNK_OVERLAP: "80"
-      RAG_HYBRID_CANDIDATE_MULTIPLIER: "5"
-      RAG_BM25_CHUNK_WORDS: "220"
-      RAG_BM25_CHUNK_OVERLAP: "50"
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./logs:/app/logs
-      - ./storage/scifact:/app/storage/scifact
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+      RAG_CORPUS_ID: "scifact"
+      RAG_CHUNKER: "sentence_window"
+      RAG_ENABLE_RERANKER: "true"
+    command: python -m evaluation --golden tests/golden_queries/scifact.sample.jsonl --top-k 10 --tier-max GRAPH_AUGMENTED --variant-label tier3_reranker
